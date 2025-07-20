@@ -1,9 +1,6 @@
 ﻿/*
-    Derived from LZ4 header files (BSD 2-Clause)
-    Copyright (c) 2011-2016, Yann Collet
-
-    C# Wrapper written by Hajin Jang
-    Copyright (C) 2018-2020 Hajin Jang
+    Written by Hajin Jang (BSD 2-Clause)
+    Copyright (C) 2018-present Hajin Jang
 
     Redistribution and use in source and binary forms, with or without modification,
     are permitted provided that the following conditions are met:
@@ -33,6 +30,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 // ReSharper disable InconsistentNaming
 
 namespace Joveler.Compression.LZ4.Tests
@@ -40,8 +38,8 @@ namespace Joveler.Compression.LZ4.Tests
     [TestClass]
     public class TestSetup
     {
-        public static string BaseDir;
-        public static string SampleDir;
+        public static string BaseDir { get; private set; }
+        public static string SampleDir { get; private set; }
 
         [AssemblyInitialize]
         public static void Init(TestContext context)
@@ -112,37 +110,16 @@ namespace Joveler.Compression.LZ4.Tests
             return libPath;
         }
 
+        #region LogEnvironment
         [TestMethod]
-        public void LogRuntimeInfo()
+        public void LogEnvironment()
         {
-            string platform = "unknown";
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                platform = "win";
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                platform = "linux";
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                platform = "osx";
-
-            string arch = "unknown";
-            switch (RuntimeInformation.ProcessArchitecture)
-            {
-                case Architecture.X86:
-                    arch = "x86";
-                    break;
-                case Architecture.X64:
-                    arch = "x64";
-                    break;
-                case Architecture.Arm:
-                    arch = "arm";
-                    break;
-                case Architecture.Arm64:
-                    arch = "arm64";
-                    break;
-            }
-
-            Console.WriteLine($"Platform = {platform}");
-            Console.WriteLine($"Arch     = {arch}");
+            StringBuilder b = new StringBuilder();
+            b.AppendLine($"OS = {RuntimeInformation.OSDescription} {RuntimeInformation.OSArchitecture}");
+            b.AppendLine($"Dotnet Runtime = {RuntimeInformation.FrameworkDescription} {RuntimeInformation.ProcessArchitecture}");
+            Console.WriteLine(b.ToString());
         }
+        #endregion
     }
 
     public static class TestHelper
@@ -178,7 +155,18 @@ namespace Joveler.Compression.LZ4.Tests
             string binary = null;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                binary = Path.Combine(TestSetup.SampleDir, binDir, "lz4.exe");
+                switch (RuntimeInformation.ProcessArchitecture)
+                {
+                    case Architecture.X86:
+                        binary = Path.Combine(TestSetup.SampleDir, binDir, "lz4.x86.exe");
+                        break;
+                    case Architecture.X64:
+                        binary = Path.Combine(TestSetup.SampleDir, binDir, "lz4.x64.exe");
+                        break;
+                    case Architecture.Arm64:
+                        binary = Path.Combine(TestSetup.SampleDir, binDir, "lz4.arm64.exe");
+                        break;
+                }
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
@@ -201,6 +189,9 @@ namespace Joveler.Compression.LZ4.Tests
                 {
                     case Architecture.X64:
                         binary = Path.Combine(TestSetup.SampleDir, binDir, "lz4.x64.mach");
+                        break;
+                    case Architecture.Arm64:
+                        binary = Path.Combine(TestSetup.SampleDir, binDir, "lz4.arm64.mach");
                         break;
                 }
             }

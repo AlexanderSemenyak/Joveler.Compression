@@ -2,7 +2,7 @@
     Derived from liblzma header files (Public Domain)
 
     C# Wrapper written by Hajin Jang
-    Copyright (C) 2018-2020 Hajin Jang
+    Copyright (C) 2018-present Hajin Jang
 
     MIT License
 
@@ -27,13 +27,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.Serialization;
 
 namespace Joveler.Compression.XZ
 {
-    [Serializable]
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
     public class XZException : Exception
     {
         public LzmaRet ReturnCode { get; set; }
@@ -49,32 +45,41 @@ namespace Joveler.Compression.XZ
             [LzmaRet.BufError] = "Unexpected end of input",
         };
 
-        private static string GetErrorMessage(LzmaRet ret) => ErrorMsgDict.ContainsKey(ret) ? ErrorMsgDict[ret] : ret.ToString();
+        private static string GetErrorMessage(LzmaRet ret)
+        {
+            bool hasMsg = ErrorMsgDict.TryGetValue(ret, out string? msg);
+            if (hasMsg && msg != null)
+                return msg;
+            else
+                return ret.ToString();
+        }
 
         public XZException(LzmaRet ret) : base(GetErrorMessage(ret))
         {
             ReturnCode = ret;
         }
 
-        public static void CheckReturnValue(LzmaRet ret)
+        public static void CheckReturnValueNormal(LzmaRet ret)
         {
-            if (ret != LzmaRet.Ok)
-                throw new XZException(ret);
+            switch (ret)
+            {
+                case LzmaRet.Ok:
+                    break;
+                default:
+                    throw new XZException(ret);
+            }
         }
 
-        #region Serializable
-        protected XZException(SerializationInfo info, StreamingContext ctx)
+        public static void CheckReturnValueDecompress(LzmaRet ret)
         {
-            ReturnCode = (LzmaRet)info.GetValue(nameof(ReturnCode), typeof(LzmaRet));
+            switch (ret)
+            {
+                case LzmaRet.Ok:
+                case LzmaRet.SeekNeeded:
+                    break;
+                default:
+                    throw new XZException(ret);
+            }
         }
-
-        public override void GetObjectData(SerializationInfo info, StreamingContext context)
-        {
-            if (info == null)
-                throw new ArgumentNullException(nameof(info));
-            info.AddValue(nameof(ReturnCode), ReturnCode);
-            base.GetObjectData(info, context);
-        }
-        #endregion
     }
 }

@@ -1,39 +1,105 @@
-﻿using BenchmarkDotNet.Attributes;
+﻿// #define SHORT_TEST
+
+using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Running;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 
 namespace Benchmark
 {
+    #region CompRatioColumn
+    public class CompRatioColumn : ReturnValueColumn
+    {
+        public override string Id { get; protected set; } = $"{nameof(CompRatioColumn)}.CompRatio";
+        public override string ColumnName { get; protected set; } = "CompRatio";
+        public override string Legend => $"Compression ratio of the configured algorithm.";
+
+        public CompRatioColumn()
+        {
+        }
+
+
+        public override bool LoadParams(object instance, BenchmarkCase benchmarkCase)
+        {
+            const string srcFileNameKey = nameof(CompBench.SrcFileName);
+            const string levelKey = nameof(CompBench.Level);
+
+            Descriptor descriptor = benchmarkCase.Descriptor;
+
+            // Get parameters from benchmarkCase
+            object srcFileNameVal = benchmarkCase.Parameters.Items.First(x => x.Name.Equals(srcFileNameKey, StringComparison.Ordinal)).Value;
+            object levelVal = benchmarkCase.Parameters.Items.First(x => x.Name.Equals(levelKey, StringComparison.Ordinal)).Value;
+            if (srcFileNameVal is not string srcFileNameStr)
+                return false;
+            if (levelVal is not string levelStr)
+                return false;
+
+            // Set parameters to benchmark instances
+            PropertyInfo srcFileNameProp = descriptor.Type.GetProperty(srcFileNameKey);
+            srcFileNameProp.SetValue(instance, srcFileNameStr);
+            PropertyInfo levelProp = descriptor.Type.GetProperty(levelKey);
+            levelProp.SetValue(instance, levelStr);
+            return true;
+        }
+
+        public override string ParseReturnObject(object ret) => ParseDouble(ret);
+    }
+
+    public class CompRatioConfig : BenchConfig
+    {
+        public CompRatioConfig() : base()
+        {
+            // Columns
+            AddColumn(new CompRatioColumn());
+        }
+    }
+    #endregion
+
     #region CompBench
-    [Config(typeof(BenchConfig))]
+    [Config(typeof(CompRatioConfig))]
+#if SHORT_TEST
+    [ShortRunJob]
+#endif
     public class CompBench
     {
+        #region Fields and Properties
         private string _sampleDir;
         private string _destDir;
+        #endregion
 
-        public double CompRatio { get; set; }
-
+        #region Parameterization
         // SrcFiles
         [ParamsSource(nameof(SrcFileNames))]
         public string SrcFileName { get; set; }
-        public IReadOnlyList<string> SrcFileNames { get; set; } = new string[]
+#if SHORT_TEST
+        public IReadOnlyList<string> SrcFileNames { get; set; } = new List<string>()
         {
-            "Banner.bmp",
-            "Banner.svg",
-            "Type4.txt",
+            "ooffice.dll"
         };
+#else
+        public IReadOnlyList<string> SrcFileNames { get; set; } = new List<string>(BenchSamples.SampleFileNames);
+#endif
+
+        /// <summary>
+        /// Cache raw source files to memory to minimize I/O bottleneck.
+        /// </summary>
         public Dictionary<string, byte[]> SrcFiles = new Dictionary<string, byte[]>(StringComparer.Ordinal);
 
         // Levels
         [ParamsSource(nameof(Levels))]
         public string Level { get; set; }
+#if SHORT_TEST
         public IReadOnlyList<string> Levels { get; set; } = new string[]
         {
-            "Fastest",
             "Default",
-            "Best",
         };
+#else
+        public IReadOnlyList<string> Levels { get; set; } = new List<string>(BenchSamples.Levels);
+#endif
+
 
         // ZLibCompLevel
         public Dictionary<string, Joveler.Compression.ZLib.ZLibCompLevel> NativeZLibLevelDict = new Dictionary<string, Joveler.Compression.ZLib.ZLibCompLevel>(StringComparer.Ordinal)
@@ -41,6 +107,13 @@ namespace Benchmark
             ["Fastest"] = Joveler.Compression.ZLib.ZLibCompLevel.BestSpeed,
             ["Default"] = Joveler.Compression.ZLib.ZLibCompLevel.Default,
             ["Best"] = Joveler.Compression.ZLib.ZLibCompLevel.BestCompression,
+        };
+
+        public Dictionary<string, System.IO.Compression.CompressionLevel> BclZLibLevelDict = new Dictionary<string, System.IO.Compression.CompressionLevel>(StringComparer.Ordinal)
+        {
+            ["Fastest"] = System.IO.Compression.CompressionLevel.Fastest,
+            ["Default"] = System.IO.Compression.CompressionLevel.Optimal,
+            ["Best"] = System.IO.Compression.CompressionLevel.SmallestSize,
         };
 
         public Dictionary<string, SharpCompress.Compressors.Deflate.CompressionLevel> ManagedZLibLevelDict = new Dictionary<string, SharpCompress.Compressors.Deflate.CompressionLevel>(StringComparer.Ordinal)
@@ -74,12 +147,19 @@ namespace Benchmark
             ["Best"] = K4os.Compression.LZ4.LZ4Level.L12_MAX, // LZ4-HC
         };
 
-        [GlobalSetup]
-        public void GlobalSetup()
+        // ZstdLevel
+        public Dictionary<string, int> ZstdLevelDict = new Dictionary<string, int>(StringComparer.Ordinal)
         {
-            Program.NativeGlobalInit();
+            ["Fastest"] = 1,
+            ["Default"] = 3,
+            ["Best"] = 22,
+        };
+        #endregion
 
-            _sampleDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "..", "..", "Samples"));
+        #region Setup and Cleanup
+        private void GlobalSetup()
+        {
+            _sampleDir = Program.SampleDir;
 
             _destDir = Path.GetTempFileName();
             File.Delete(_destDir);
@@ -98,6 +178,56 @@ namespace Benchmark
             }
         }
 
+        [GlobalSetup(Targets = [nameof(ZLibNgNativeJoveler), nameof(ZLibNgParallelNativeJoveler), nameof(ZLibNgParallelTwoNativeJoveler)])]
+        public void ZLibNgSetup()
+        {
+            Program.NativeGlobalInit(AlgorithmFlags.ZLibNg);
+
+            GlobalSetup();
+        }
+
+        [GlobalSetup(Targets = [nameof(ZLibUpNativeJoveler), nameof(ZLibUpParallelNativeJoveler), nameof(ZLibUpParallelTwoNativeJoveler)])]
+        public void ZLibUpSetup()
+        {
+            Program.NativeGlobalInit(AlgorithmFlags.ZLibUp);
+
+            GlobalSetup();
+        }
+
+        [GlobalSetup(Targets = [nameof(XZSingleNativeJoveler), nameof(XZMultiNativeJoveler)])]
+        public void XZSetup()
+        {
+            Program.NativeGlobalInit(AlgorithmFlags.XZ);
+
+            GlobalSetup();
+        }
+
+
+        [GlobalSetup(Targets = [nameof(LZ4NativeJoveler), nameof(LZ4ParallelOneNativeJoveler), nameof(LZ4ParallelTwoNativeJoveler)])]
+        public void LZ4Setup()
+        {
+            Program.NativeGlobalInit(AlgorithmFlags.LZ4);
+
+            GlobalSetup();
+        }
+
+        [GlobalSetup(Targets = [nameof(ZstdSingleNativeJoveler), nameof(ZstdMultiNativeJoveler)])]
+        public void ZstdSetup()
+        {
+            Program.NativeGlobalInit(AlgorithmFlags.Zstd);
+
+            ZstdLevelDict["Fatest"] = Joveler.Compression.Zstd.ZstdStream.MinCompressionLevel();
+            ZstdLevelDict["Best"] = Joveler.Compression.Zstd.ZstdStream.MaxCompressionLevel();
+
+            GlobalSetup();
+        }
+
+        [GlobalSetup]
+        public void ManagedSetup()
+        {
+            GlobalSetup();
+        }
+
         [GlobalCleanup]
         public void GlobalCleanup()
         {
@@ -105,10 +235,211 @@ namespace Benchmark
                 Directory.Delete(_destDir);
             Program.NativeGlobalCleanup();
         }
+        #endregion
 
-        [Benchmark]
+        #region Benchmark - zlib
+        private double ZLibNativeJoveler()
+        {
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                Joveler.Compression.ZLib.ZLibCompressOptions compOpts = new Joveler.Compression.ZLib.ZLibCompressOptions()
+                {
+                    Level = NativeZLibLevelDict[Level],
+                    LeaveOpen = true,
+                };
+
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (Joveler.Compression.ZLib.ZLibStream zs = new Joveler.Compression.ZLib.ZLibStream(ms, compOpts))
+                {
+                    rms.CopyTo(zs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+
+        private double ZLibParallelNativeJoveler(int threads)
+        {
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                Joveler.Compression.ZLib.ZLibCompressOptions compOpts = new Joveler.Compression.ZLib.ZLibCompressOptions()
+                {
+                    Level = NativeZLibLevelDict[Level],
+                    LeaveOpen = true,
+                };
+                Joveler.Compression.ZLib.ZLibParallelCompressOptions pcompOpts = new Joveler.Compression.ZLib.ZLibParallelCompressOptions()
+                {
+                    Threads = threads,
+                    WriteTimeout = TimeSpan.Zero,
+                };
+
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (Joveler.Compression.ZLib.ZLibStream zs = new Joveler.Compression.ZLib.ZLibStream(ms, compOpts, pcompOpts))
+                {
+                    rms.CopyTo(zs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+
+        [Benchmark(Description = "zlib-ng (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibNgNativeJoveler()
+        {
+            return ZLibNativeJoveler();
+        }
+
+        [Benchmark(Description = "zlib (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibUpNativeJoveler()
+        {
+            return ZLibNativeJoveler();
+        }
+
+        [Benchmark(Description = "zlib-ng-T1 (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibNgParallelNativeJoveler()
+        {
+            return ZLibParallelNativeJoveler(1);
+        }
+
+        [Benchmark(Description = "zlib-T1 (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibUpParallelNativeJoveler()
+        {
+            return ZLibParallelNativeJoveler(1);
+        }
+
+        [Benchmark(Description = "zlib-ng-T2 (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibNgParallelTwoNativeJoveler()
+        {
+            return ZLibParallelNativeJoveler(2);
+        }
+
+        [Benchmark(Description = "zlib-T2 (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibUpParallelTwoNativeJoveler()
+        {
+            return ZLibParallelNativeJoveler(2);
+        }
+
+        [Benchmark(Description = "zlib (n_BCL)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibNativeBcl()
+        {
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                System.IO.Compression.CompressionLevel level = BclZLibLevelDict[Level];
+
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (System.IO.Compression.ZLibStream zs = new System.IO.Compression.ZLibStream(ms, level, true))
+                {
+                    rms.CopyTo(zs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+
+        [Benchmark(Description = "zlib (m_SharpCompress)")]
+        [BenchmarkCategory(BenchConfig.ZLib)]
+        public double ZLibManagedSharpCompress()
+        {
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using MemoryStream rms = new MemoryStream(rawData);
+                using SharpCompress.Compressors.Deflate.ZlibStream zs = new SharpCompress.Compressors.Deflate.ZlibStream(ms, SharpCompress.Compressors.CompressionMode.Compress, ManagedZLibLevelDict[Level]);
+                rms.CopyTo(zs);
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+        #endregion
+
+        #region Benchmark - xz-utils
+        [Benchmark(Description = "xz (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.XZ)]
+        public double XZSingleNativeJoveler()
+        {
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                Joveler.Compression.XZ.XZCompressOptions compOpts = new Joveler.Compression.XZ.XZCompressOptions
+                {
+                    Level = XZLevelDict[Level],
+                    LeaveOpen = true,
+                };
+
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (Joveler.Compression.XZ.XZStream xzs = new Joveler.Compression.XZ.XZStream(ms, compOpts))
+                {
+                    rms.CopyTo(xzs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+
+        [Benchmark(Description = "xz-T1 (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.XZ)]
+        public double XZMultiNativeJoveler()
+        {
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                Joveler.Compression.XZ.XZCompressOptions compOpts = new Joveler.Compression.XZ.XZCompressOptions
+                {
+                    // Do not run "Best" profile. It will take up a lot of memory.
+                    Level = XZLevelDict["Default"],
+                    LeaveOpen = true,
+                };
+
+                // LZMA2 threaded compression with -9 option takes a lot of memory.
+                // To prevent memory starvation and make test results consistent, test only 1 threads.
+                Joveler.Compression.XZ.XZParallelCompressOptions threadOpts = new Joveler.Compression.XZ.XZParallelCompressOptions
+                {
+                    Threads = 1,
+                };
+
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (Joveler.Compression.XZ.XZStream xzs = new Joveler.Compression.XZ.XZStream(ms, compOpts, threadOpts))
+                {
+                    rms.CopyTo(xzs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+        #endregion
+
+        #region Benchmark - lz4
+        [Benchmark(Description = "lz4 (n_Joveler)")]
         [BenchmarkCategory(BenchConfig.LZ4)]
-        public double LZ4_Native()
+        public double LZ4NativeJoveler()
         {
             Joveler.Compression.LZ4.LZ4FrameCompressOptions compOpts = new Joveler.Compression.LZ4.LZ4FrameCompressOptions()
             {
@@ -130,14 +461,74 @@ namespace Benchmark
                 ms.Flush();
                 compLen = ms.Position;
             }
-
-            CompRatio = (double)compLen / rawData.Length;
-            return CompRatio;
+            return (double)compLen / rawData.Length;
         }
 
-        [Benchmark]
+        [Benchmark(Description = "lz4-T1 (n_Joveler)")]
         [BenchmarkCategory(BenchConfig.LZ4)]
-        public double LZ4_Managed()
+        public double LZ4ParallelOneNativeJoveler()
+        {
+            Joveler.Compression.LZ4.LZ4FrameCompressOptions compOpts = new Joveler.Compression.LZ4.LZ4FrameCompressOptions()
+            {
+                Level = NativeLZ4LevelDict[Level],
+                LeaveOpen = true,
+            };
+            Joveler.Compression.LZ4.LZ4FrameParallelCompressOptions pcompOpts = new Joveler.Compression.LZ4.LZ4FrameParallelCompressOptions()
+            {
+                Threads = 1,
+                WriteTimeout = TimeSpan.Zero,
+            };
+
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (Joveler.Compression.LZ4.LZ4FrameStream lzs = new Joveler.Compression.LZ4.LZ4FrameStream(ms, compOpts, pcompOpts))
+                {
+                    rms.CopyTo(lzs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+
+        [Benchmark(Description = "lz4-T2 (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.LZ4)]
+        public double LZ4ParallelTwoNativeJoveler()
+        {
+            Joveler.Compression.LZ4.LZ4FrameCompressOptions compOpts = new Joveler.Compression.LZ4.LZ4FrameCompressOptions()
+            {
+                Level = NativeLZ4LevelDict[Level],
+                LeaveOpen = true,
+            };
+            Joveler.Compression.LZ4.LZ4FrameParallelCompressOptions pcompOpts = new Joveler.Compression.LZ4.LZ4FrameParallelCompressOptions()
+            {
+                Threads = 2,
+                WriteTimeout = TimeSpan.Zero,
+            };
+
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (Joveler.Compression.LZ4.LZ4FrameStream lzs = new Joveler.Compression.LZ4.LZ4FrameStream(ms, compOpts, pcompOpts))
+                {
+                    rms.CopyTo(lzs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+
+        [Benchmark(Description = "lz4 (m_K4os)")]
+        [BenchmarkCategory(BenchConfig.LZ4)]
+        public double LZ4ManagedK4os()
         {
             long compLen;
             byte[] rawData = SrcFiles[SrcFileName];
@@ -152,27 +543,28 @@ namespace Benchmark
                 ms.Flush();
                 compLen = ms.Position;
             }
-
-            CompRatio = (double)compLen / rawData.Length;
-            return CompRatio;
+            return (double)compLen / rawData.Length;
         }
+        #endregion
 
-        [Benchmark]
-        [BenchmarkCategory(BenchConfig.ZLib)]
-        public double ZLib_Native()
+        #region Benchmark - zstd
+        [Benchmark(Description = "zstd (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.Zstd)]
+        public double ZstdSingleNativeJoveler()
         {
             long compLen;
             byte[] rawData = SrcFiles[SrcFileName];
             using (MemoryStream ms = new MemoryStream())
             {
-                Joveler.Compression.ZLib.ZLibCompressOptions compOpts = new Joveler.Compression.ZLib.ZLibCompressOptions()
+                Joveler.Compression.Zstd.ZstdCompressOptions compOpts = new Joveler.Compression.Zstd.ZstdCompressOptions
                 {
-                    Level = NativeZLibLevelDict[Level],
+                    CompressionLevel = ZstdLevelDict[Level],
+                    MTWorkers = 0,
                     LeaveOpen = true,
                 };
 
                 using (MemoryStream rms = new MemoryStream(rawData))
-                using (Joveler.Compression.ZLib.ZLibStream zs = new Joveler.Compression.ZLib.ZLibStream(ms, compOpts))
+                using (Joveler.Compression.Zstd.ZstdStream zs = new Joveler.Compression.Zstd.ZstdStream(ms, compOpts))
                 {
                     rms.CopyTo(zs);
                 }
@@ -180,58 +572,56 @@ namespace Benchmark
                 ms.Flush();
                 compLen = ms.Position;
             }
-
-            CompRatio = (double)compLen / rawData.Length;
-            return CompRatio;
+            return (double)compLen / rawData.Length;
         }
 
-        [Benchmark]
-        [BenchmarkCategory(BenchConfig.ZLib)]
-        public double ZLib_Managed()
+        [Benchmark(Description = "zstd-T1 (n_Joveler)")]
+        [BenchmarkCategory(BenchConfig.Zstd)]
+        public double ZstdMultiNativeJoveler()
         {
             long compLen;
             byte[] rawData = SrcFiles[SrcFileName];
             using (MemoryStream ms = new MemoryStream())
             {
-                using MemoryStream rms = new MemoryStream(rawData);
-                using SharpCompress.Compressors.Deflate.ZlibStream zs = new SharpCompress.Compressors.Deflate.ZlibStream(ms, SharpCompress.Compressors.CompressionMode.Compress, ManagedZLibLevelDict[Level]);
-                rms.CopyTo(zs);
-
-                ms.Flush();
-                compLen = ms.Position;
-            }
-
-            CompRatio = (double)compLen / rawData.Length;
-            return CompRatio;
-        }
-
-        [Benchmark]
-        [BenchmarkCategory(BenchConfig.XZ)]
-        public double XZ_Native()
-        {
-            long compLen;
-            byte[] rawData = SrcFiles[SrcFileName];
-            using (MemoryStream ms = new MemoryStream())
-            {
-                Joveler.Compression.XZ.XZCompressOptions compOpts = new Joveler.Compression.XZ.XZCompressOptions
+                Joveler.Compression.Zstd.ZstdCompressOptions compOpts = new Joveler.Compression.Zstd.ZstdCompressOptions
                 {
-                    Level = XZLevelDict[Level],
+                    CompressionLevel = ZstdLevelDict[Level],
+                    MTWorkers = 1,
                     LeaveOpen = true,
                 };
 
                 using (MemoryStream rms = new MemoryStream(rawData))
-                using (Joveler.Compression.XZ.XZStream xzs = new Joveler.Compression.XZ.XZStream(ms, compOpts))
+                using (Joveler.Compression.Zstd.ZstdStream zs = new Joveler.Compression.Zstd.ZstdStream(ms, compOpts))
                 {
-                    rms.CopyTo(xzs);
+                    rms.CopyTo(zs);
                 }
 
                 ms.Flush();
                 compLen = ms.Position;
             }
-
-            CompRatio = (double)compLen / rawData.Length;
-            return CompRatio;
+            return (double)compLen / rawData.Length;
         }
+
+        [Benchmark(Description = "zstd (m_ZstdSharp)")]
+        [BenchmarkCategory(BenchConfig.Zstd)]
+        public double ZstdManagedZstdSharp()
+        {
+            long compLen;
+            byte[] rawData = SrcFiles[SrcFileName];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (MemoryStream rms = new MemoryStream(rawData))
+                using (ZstdSharp.CompressionStream zs = new ZstdSharp.CompressionStream(ms, ZstdLevelDict[Level], 0, true))
+                {
+                    rms.CopyTo(zs);
+                }
+
+                ms.Flush();
+                compLen = ms.Position;
+            }
+            return (double)compLen / rawData.Length;
+        }
+        #endregion
     }
     #endregion
 }

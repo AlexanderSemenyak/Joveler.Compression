@@ -11,45 +11,33 @@ Joveler.Compression.XZ can be installed via [nuget](https://www.nuget.org/packag
 ## Features
 
 - XZStream, the stream for [.xz file format](https://tukaani.org/xz/xz-file-format.txt).
+- Parallel compression and decompression of XZStream.
+- Fast native implementation of CRC32 and CRC64 checksums.
 
 ## Support
 
 ### Targeted .NET platforms
 
-- .NET Standard 2.1 (.NET Core 3.0+)
-- .NET Standard 2.0 (.NET Framework 4.6.1+, .NET Core 2.0+)
-- .NET Framework 4.5.1
-
-If you need .NET Standard 1.3 support, use [v1.1.2](https://www.nuget.org/packages/Joveler.Compression.XZ/1.1.2) instead.
+- .NET 8.0
+- .NET Standard 2.0
+- .NET Framework 4.6.2
 
 ### Supported OS platforms
 
-| Platform | Architecture | Tested |
-|----------|--------------|--------|
-| Windows  | x86          | Yes    |
-|          | x64          | Yes    |
-|          | arm64        | Yes    |
-| Linux    | x64          | Yes    |
-|          | armhf        | Yes    |
-|          | arm64        | Yes    |
-| macOS    | x64          | Yes    |
+| Platform | Architecture | Minimum Target | Tested |
+|----------|--------------|----------------|--------|
+| Windows  | x86          | Windows 7 SP1  | Yes    |
+|          | x64          | Windows 7 SP1  | Yes    |
+|          | arm64        | Windows 7 SP1  | Yes    |
+| Linux    | x64          | Ubuntu 20.04   | Yes    |
+|          | armhf        | Ubuntu 20.04   | Yes    |
+|          | arm64        | Ubuntu 20.04   | Yes    |
+| macOS    | x64          | macOS 11       | Yes    |
+|          | arm64        | macOS 11       | Yes    |
 
-macOS arm64 should be supported on theory, but I do not have access to an Apple Sillicon device to test. Please contribute if you have an ARM64 macOS machine.
+### Supported XZ Utils versions
 
-#### Tested linux distributions
-
-| Architecture  | Distribution | Note |
-|---------------|--------------|------|
-| x64           | Ubuntu 18.04 | Tested on AppVeyor CI |
-| armhf         | Debian 10    | Emulated on QEMU      |
-| arm64         | Debian 10    | Emulated on QEMU      |
-
-### Supported XZ Utils version
-
-- 5.2.2
-- 5.2.3
-- 5.2.4
-- 5.2.5 (Included)
+- 5.6.4 (Included)
 
 ## Usage
 

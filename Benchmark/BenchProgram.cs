@@ -1,44 +1,32 @@
-﻿using BenchmarkDotNet.Running;
+﻿using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Running;
 using CommandLine;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-// ReSharper disable InconsistentNaming
 
 namespace Benchmark
 {
-    #region Parameter
+    #region Parameters
     [Flags]
     public enum AlgorithmFlags
     {
         None = 0x0,
-        ZLib = 0x1,
-        XZ = 0x2,
-        LZ4 = 0x4,
-        All = ZLib | XZ | LZ4,
+        ZLib = 0x2,
+        ZLibUp = 0x1,
+        ZLibNg = 0x2,
+        XZ = 0x4,
+        LZ4 = 0x8,
+        Zstd = 0x10,
+        All = ZLibUp | ZLibNg | XZ | LZ4 | Zstd,
     }
 
     public abstract class ParamOptions
     {
-        [Option("algo", Default = AlgorithmFlags.All, HelpText = "Choose algorithms to benchmark | zlib,xz,lz4,all")]
+        [Option("algo", Default = AlgorithmFlags.All, HelpText = "Choose algorithms to benchmark | zlib,xz,lz4,zstd,all")]
         public AlgorithmFlags Algorithms { get; set; }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public T Cast<T>() where T : ParamOptions
-        {
-            T cast = this as T;
-            Debug.Assert(cast != null);
-            return cast;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static T Cast<T>(ParamOptions opts) where T : ParamOptions
-        {
-            return opts.Cast<T>();
-        }
     }
 
     [Verb("all", HelpText = "Benchmark all")]
@@ -50,16 +38,30 @@ namespace Benchmark
     [Verb("decomp", HelpText = "Benchmark decompression")]
     public class DecompBenchOptions : ParamOptions { }
 
+    [Verb("xzmulti", HelpText = "Benchmark multithread options (XZ only)")]
+    public class XZMultiOptionBenchOptions : ParamOptions { }
+
     [Verb("hash", HelpText = "Benchmark hash and checksums")]
     public class HashBenchOptions : ParamOptions { }
 
     [Verb("buffer", HelpText = "Benchmark buffer size")]
     public class BufferSizeBenchOptions : ParamOptions { }
+
+    [Verb("conf-test", HelpText = "Test BenchConfig")]
+    public class ConfTestBenchOptions : ParamOptions { }
     #endregion
 
     #region Program
     public static class Program
     {
+        #region Directories
+        /// <summary>
+        /// Used in real benchmarks
+        /// </summary>
+        public static string BaseDir { get; private set; } = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
+        public static string SampleDir { get; private set; } = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "..", "..", "Samples"));
+        #endregion
+
         #region PrintErrorAndExit
         internal static void PrintErrorAndExit(IEnumerable<Error> errs)
         {
@@ -69,93 +71,133 @@ namespace Benchmark
         }
         #endregion
 
+        #region Static properties
+        private static AlgorithmFlags _initFlags = AlgorithmFlags.None;
+        #endregion
+
         #region Init and Cleanup
-        public static void NativeGlobalInit()
+        public static void SetGlobalDir()
         {
+            const string runtimes = "runtimes";
+
+            /// Paths used in real benchmarks
+            BaseDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
+            SampleDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "..", "..", "Samples"));
+
+            string runtimeRootDir = Path.Combine(BaseDir, runtimes);
+            if (!Directory.Exists(runtimeRootDir))
+            { // Paths used in summary/results
+                // CompRatioConfig has return value collecting column. It runs at result print time.
+                BaseDir = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+                SampleDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Samples"));
+            }
+        }
+
+        public static void NativeGlobalInit(AlgorithmFlags flags)
+        {
+            // Unload any native library that has been loaded.
+            NativeGlobalCleanup();
+
+            _initFlags = flags;
+
+            SetGlobalDir();
+
             const string runtimes = "runtimes";
             const string native = "native";
 
-            string baseDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
-
-            string zlibPath = null;
+            string zlibNgCompatPath = null;
+            string zlibUpstreamPath = null;
             string xzPath = null;
             string lz4Path = null;
+            string zstdPath = null;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                string libDir;
-                switch (RuntimeInformation.ProcessArchitecture)
+                string libDir = RuntimeInformation.ProcessArchitecture switch
                 {
-                    case Architecture.X86:
-                        libDir = Path.Combine(baseDir, runtimes, "win-x86", native);
-                        break;
-                    case Architecture.X64:
-                        libDir = Path.Combine(baseDir, runtimes, "win-x64", native);
-                        break;
-                    case Architecture.Arm64:
-                        libDir = Path.Combine(baseDir, runtimes, "win-arm64", native);
-                        break;
-                    default:
-                        throw new PlatformNotSupportedException();
-                }
-
-                zlibPath = Path.Combine(libDir, "zlibwapi.dll");
+                    Architecture.X86 => Path.Combine(BaseDir, runtimes, "win-x86", native),
+                    Architecture.X64 => Path.Combine(BaseDir, runtimes, "win-x64", native),
+                    Architecture.Arm64 => Path.Combine(BaseDir, runtimes, "win-arm64", native),
+                    _ => throw new PlatformNotSupportedException(),
+                };
+                zlibNgCompatPath = Path.Combine(libDir, "zlib1.dll");
+                zlibUpstreamPath = Path.Combine(libDir, "zlibwapi-upstream.dll");
                 xzPath = Path.Combine(libDir, "liblzma.dll");
                 lz4Path = Path.Combine(libDir, "liblz4.dll");
+                zstdPath = Path.Combine(libDir, "libzstd.dll");
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                string libDir;
-                switch (RuntimeInformation.ProcessArchitecture)
+                string libDir = RuntimeInformation.ProcessArchitecture switch
                 {
-                    case Architecture.X64:
-                        libDir = Path.Combine(baseDir, runtimes, "linux-x64", native);
-                        break;
-                    case Architecture.Arm:
-                        libDir = Path.Combine(baseDir, runtimes, "linux-arm", native);
-                        break;
-                    case Architecture.Arm64:
-                        libDir = Path.Combine(baseDir, runtimes, "linux-arm64", native);
-                        break;
-                    default:
-                        throw new PlatformNotSupportedException();
-                }
-
-                zlibPath = Path.Combine(libDir, "libz.so");
+                    Architecture.X64 => Path.Combine(BaseDir, runtimes, "linux-x64", native),
+                    Architecture.Arm => Path.Combine(BaseDir, runtimes, "linux-arm", native),
+                    Architecture.Arm64 => Path.Combine(BaseDir, runtimes, "linux-arm64", native),
+                    _ => throw new PlatformNotSupportedException(),
+                };
+                zlibNgCompatPath = Path.Combine(libDir, "libz.so");
+                zlibUpstreamPath = Path.Combine(libDir, "libz-upstream.so");
                 xzPath = Path.Combine(libDir, "liblzma.so");
                 lz4Path = Path.Combine(libDir, "liblz4.so");
+                zstdPath = Path.Combine(libDir, "libzstd.so");
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                string libDir;
-                switch (RuntimeInformation.ProcessArchitecture)
+                string libDir = RuntimeInformation.ProcessArchitecture switch
                 {
-                    case Architecture.X64:
-                        libDir = Path.Combine(baseDir, runtimes, "osx-x64", native);
-                        break;
-                    case Architecture.Arm64:
-                        throw new PlatformNotSupportedException("TODO");
-                    default:
-                        throw new PlatformNotSupportedException();
-                }
-
-                zlibPath = Path.Combine(libDir, "libz.dylib");
+                    Architecture.X64 => Path.Combine(BaseDir, runtimes, "osx-x64", native),
+                    Architecture.Arm64 => Path.Combine(BaseDir, runtimes, "osx-arm64", native),
+                    _ => throw new PlatformNotSupportedException(),
+                };
+                zlibNgCompatPath = Path.Combine(libDir, "libz.dylib");
+                zlibUpstreamPath = Path.Combine(libDir, "libz-upstream.dylib");
                 xzPath = Path.Combine(libDir, "liblzma.dylib");
                 lz4Path = Path.Combine(libDir, "liblz4.dylib");
+                zstdPath = Path.Combine(libDir, "libzstd.dylib");
             }
 
-            if (zlibPath == null || xzPath == null || lz4Path == null)
+            if (zlibNgCompatPath == null || zlibUpstreamPath == null ||
+                xzPath == null || lz4Path == null)
                 throw new PlatformNotSupportedException();
 
-            Joveler.Compression.ZLib.ZLibInit.GlobalInit(zlibPath);
-            Joveler.Compression.XZ.XZInit.GlobalInit(xzPath);
-            Joveler.Compression.LZ4.LZ4Init.GlobalInit(lz4Path);
+            // zlib-ng and zlib are mutually exclusive.
+            // Joveler.Compression.ZLib cannot load two or more zlib at once.
+            if (flags.HasFlag(AlgorithmFlags.ZLibNg))
+            {
+                Joveler.Compression.ZLib.ZLibInitOptions initOpts = new Joveler.Compression.ZLib.ZLibInitOptions()
+                {
+                    IsWindowsStdcall = false
+                };
+                Joveler.Compression.ZLib.ZLibInit.GlobalInit(zlibNgCompatPath, initOpts);
+            }
+            else if (flags.HasFlag(AlgorithmFlags.ZLibUp))
+            {
+                Joveler.Compression.ZLib.ZLibInitOptions initOpts = new Joveler.Compression.ZLib.ZLibInitOptions()
+                {
+                    IsWindowsStdcall = true
+                };
+                Joveler.Compression.ZLib.ZLibInit.GlobalInit(zlibUpstreamPath, initOpts);
+            }
+
+            if (flags.HasFlag(AlgorithmFlags.XZ))
+                Joveler.Compression.XZ.XZInit.GlobalInit(xzPath);
+            if (flags.HasFlag(AlgorithmFlags.LZ4))
+                Joveler.Compression.LZ4.LZ4Init.GlobalInit(lz4Path);
+            if (flags.HasFlag(AlgorithmFlags.Zstd))
+                Joveler.Compression.Zstd.ZstdInit.GlobalInit(zstdPath);
         }
 
         public static void NativeGlobalCleanup()
         {
-            Joveler.Compression.ZLib.ZLibInit.GlobalCleanup();
-            Joveler.Compression.XZ.XZInit.GlobalCleanup();
-            Joveler.Compression.LZ4.LZ4Init.GlobalCleanup();
+            if (_initFlags.HasFlag(AlgorithmFlags.ZLibNg) || _initFlags.HasFlag(AlgorithmFlags.ZLibUp))
+                Joveler.Compression.ZLib.ZLibInit.GlobalCleanup();
+            if (_initFlags.HasFlag(AlgorithmFlags.XZ))
+                Joveler.Compression.XZ.XZInit.GlobalCleanup();
+            if (_initFlags.HasFlag(AlgorithmFlags.LZ4))
+                Joveler.Compression.LZ4.LZ4Init.GlobalCleanup();
+            if (_initFlags.HasFlag(AlgorithmFlags.Zstd))
+                Joveler.Compression.Zstd.ZstdInit.GlobalCleanup();
+
+            _initFlags = AlgorithmFlags.None;
         }
         #endregion
 
@@ -174,34 +216,46 @@ namespace Benchmark
             });
 
             argParser.ParseArguments<AllBenchOptions,
-                CompBenchOptions, DecompBenchOptions, HashBenchOptions, BufferSizeBenchOptions>(args)
+                CompBenchOptions, DecompBenchOptions, XZMultiOptionBenchOptions,
+                HashBenchOptions, BufferSizeBenchOptions, ConfTestBenchOptions>(args)
                 .WithParsed<AllBenchOptions>(x => Opts = x)
                 .WithParsed<CompBenchOptions>(x => Opts = x)
                 .WithParsed<DecompBenchOptions>(x => Opts = x)
+                .WithParsed<XZMultiOptionBenchOptions>(x => Opts = x)
                 .WithParsed<HashBenchOptions>(x => Opts = x)
                 .WithParsed<BufferSizeBenchOptions>(x => Opts = x)
+                .WithParsed<ConfTestBenchOptions>(x => Opts = x)
                 .WithNotParsed(PrintErrorAndExit);
             Debug.Assert(Opts != null, $"{nameof(Opts)} != null");
+
+            ManualConfig config = DefaultConfig.Instance.WithOptions(ConfigOptions.Default);
 
             switch (Opts)
             {
                 case AllBenchOptions _:
-                    BenchmarkRunner.Run<CompBench>();
-                    BenchmarkRunner.Run<DecompBench>();
-                    BenchmarkRunner.Run<HashBench>();
-                    BenchmarkRunner.Run<BufferSizeBench>();
+                    BenchmarkRunner.Run<CompBench>(config);
+                    BenchmarkRunner.Run<DecompBench>(config);
+                    BenchmarkRunner.Run<XZMultiOptionBench>(config);
+                    BenchmarkRunner.Run<HashBench>(config);
+                    BenchmarkRunner.Run<BufferSizeBench>(config);
                     break;
                 case CompBenchOptions _:
-                    BenchmarkRunner.Run<CompBench>();
+                    BenchmarkRunner.Run<CompBench>(config);
                     break;
                 case DecompBenchOptions _:
-                    BenchmarkRunner.Run<DecompBench>();
+                    BenchmarkRunner.Run<DecompBench>(config);
+                    break;
+                case XZMultiOptionBenchOptions _:
+                    BenchmarkRunner.Run<XZMultiOptionBench>(config);
                     break;
                 case HashBenchOptions _:
-                    BenchmarkRunner.Run<HashBench>();
+                    BenchmarkRunner.Run<HashBench>(config);
                     break;
                 case BufferSizeBenchOptions _:
-                    BenchmarkRunner.Run<BufferSizeBench>();
+                    BenchmarkRunner.Run<BufferSizeBench>(config);
+                    break;
+                case ConfTestBenchOptions _:
+                    BenchmarkRunner.Run<ConfigTestBench>();
                     break;
             }
         }

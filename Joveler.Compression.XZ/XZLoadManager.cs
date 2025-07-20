@@ -1,5 +1,5 @@
 ﻿/*
-    Copyright (C) 2018-2020 Hajin Jang
+    Copyright (C) 2018-present Hajin Jang
 
     MIT License
 
@@ -26,7 +26,7 @@ using Joveler.DynLoader;
 
 namespace Joveler.Compression.XZ
 {
-    internal class XZLoadManager : LoadManagerBase<XZLoader>
+    internal sealed class XZLoadManager : LoadManagerBase<XZLoader>
     {
         protected override string ErrorMsgInitFirst => "Please call XZInit.GlobalInit() first!";
         protected override string ErrorMsgAlreadyLoaded => "Joveler.Compression.XZ is already initialized.";

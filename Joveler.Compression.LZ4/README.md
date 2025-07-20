@@ -10,49 +10,45 @@ Joveler.Compression.LZ4 can be installed via [nuget](https://www.nuget.org/packa
 
 ## Performance
 
-Please keep in mind that `Joveler.Compression.LZ4` have been uploaded to the nuget because it supports many customizable options, not best in performance.
+Due to LZ4's performant nature, P/Invoke overhead has a more negative effect on LZ4 than on conventional compression algorithms.
 
-Decompression of `Joveler.Compression.LZ4` is similar or slightly faster than the pure C# implementation, [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4). In the meanwhile the compression is about 50% faster to 2000% slower. Please be careful about performance when using it on production.
+If you mostly handle big files and focus on multithreaded high-level compression, `Joveler.Compression.LZ4` is the right choice.
+
+If you mostly handle small files and are focused on performant single-threaded use, consider using [K4os.Compression.LZ4](https://github.com/MiloszKjewski/K4os.Compression.LZ4), the pure C# implementation. Its performance generally ties in with the native pinvoke method. 
+
+Suppose your use case involves mostly decompression, use [K4os.Compression.LZ4](https://github.com/MiloszKjewski/K4os.Compression.LZ4) as it is consistently faster.
+
+Read the [Benchmark](#Benchmark) section for more details.
 
 ## Features
 
 - LZ4FrameStream, the stream for [lz4 frame format](https://github.com/lz4/lz4/blob/master/doc/lz4_Frame_format.md).
+- (EXPERIMENTAL) Parallel compression support on LZ4FrameStream.
 
 ## Support
 
 ### Targeted .NET platforms
 
-- .NET Standard 2.1 (.NET Core 3.0+)
-- .NET Standard 2.0 (.NET Framework 4.6.1+, .NET Core 2.0+)
-- .NET Framework 4.5.1
+- .NET 8.0
+- .NET Standard 2.0
+- .NET Framework 4.6.2
 
 ### Supported OS platforms
 
-| Platform | Architecture | Tested |
-|----------|--------------|--------|
-| Windows  | x86          | Yes    |
-|          | x64          | Yes    |
-|          | arm64        | Yes    |
-| Linux    | x64          | Yes    |
-|          | armhf        | Yes    |
-|          | arm64        | Yes    |
-| macOS    | x64          | Yes    |
+| Platform | Architecture | Minimum Target | Tested |
+|----------|--------------|----------------|--------|
+| Windows  | x86          | Windows 7 SP1  | Yes    |
+|          | x64          | Windows 7 SP1  | Yes    |
+|          | arm64        | Windows 7 SP1  | Yes    |
+| Linux    | x64          | Ubuntu 20.04   | Yes    |
+|          | armhf        | Ubuntu 20.04   | Yes    |
+|          | arm64        | Ubuntu 20.04   | Yes    |
+| macOS    | x64          | macOS 11       | Yes    |
+|          | arm64        | macOS 11       | Yes    |
 
-macOS arm64 should be supported on theory, but I do not have access to an Apple Sillicon device to test. Please contribute if you have an ARM64 macOS machine.
+### Supported LZ4 versions
 
-#### Tested linux distributions
-
-| Architecture  | Distribution | Note |
-|---------------|--------------|------|
-| x64           | Ubuntu 18.04 | Tested on AppVeyor CI |
-| armhf         | Debian 10    | Emulated on QEMU      |
-| arm64         | Debian 10    | Emulated on QEMU      |
-
-### Supported LZ4 version
-
-- 1.9.1
-- 1.9.2
-- 1.9.3 (Included)
+- 1.10.0 (Included)
 
 ## Usage
 
@@ -66,3 +62,60 @@ See [CHANGELOG.md](./CHANGELOG.md).
 
 `Joveler.Compression.LZ4` is licensed under [BSD 2-Clause license](./LICENSE).
 
+## Benchmark
+
+### Compression
+
+In singlethread compression, `Joveler.Compression.LZ4` ties with [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4).
+
+In multithread compression, performance of `Joveler.Compression.LZ4` scales linearly when data requires a time to be compressed.
+
+| Method | SrcFileName       | Level   | Mean       |
+|--------|-------------------|---------|------------|
+| lz4    | bible_en_utf8.txt | Default | 155,165 μs |
+| lz4-T2 | bible_en_utf8.txt | Default | 156,913 μs |
+| K4os   | bible_en_utf8.txt | Default | 171,872 μs |
+| lz4    | bible_en_utf8.txt | Fastest | 8,658 μs   |
+| lz4-T2 | bible_en_utf8.txt | Fastest | 10,089 μs  |
+| K4os   | bible_en_utf8.txt | Fastest | 9,562 μs   |
+| lz4    | bible_kr_utf8.txt | Default | 194,444 μs |
+| lz4-T2 | bible_kr_utf8.txt | Default | 172,994 μs |
+| K4os   | bible_kr_utf8.txt | Default | 207,119 μs |
+| lz4    | bible_kr_utf8.txt | Fastest | 10,219 μs  |
+| lz4-T2 | bible_kr_utf8.txt | Fastest | 10,460 μs  |
+| K4os   | bible_kr_utf8.txt | Fastest | 11,406 μs  |
+| lz4    | ooffice.dll       | Default | 140,671 μs |
+| lz4-T2 | ooffice.dll       | Default | 101,661 μs |
+| K4os   | ooffice.dll       | Default | 156,425 μs |
+| lz4    | ooffice.dll       | Fastest | 10,762 μs  |
+| lz4-T2 | ooffice.dll       | Fastest | 9,557 μs   |
+| K4os   | ooffice.dll       | Fastest | 13,531 μs  |
+| lz4    | reymont.pdf       | Default | 335,907 μs |
+| lz4-T2 | reymont.pdf       | Default | 218,780 μs |
+| K4os   | reymont.pdf       | Default | 363,534 μs |
+| lz4    | reymont.pdf       | Fastest | 13,985 μs  |
+| lz4-T2 | reymont.pdf       | Fastest | 10,868 μs  |
+| K4os   | reymont.pdf       | Fastest | 15,343 μs  |
+
+### Decompression
+
+[K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) is about twice faster than `Joveler.Compression.LZ4`.
+
+| Method | SrcFileName       | Level   | Mean       |
+|--------|-------------------|---------|------------|
+| lz4    | bible_en_utf8.txt  | Default | 4,598.377 μs |
+| K4os   | bible_en_utf8.txt  | Default | 2,728.262 μs |
+| lz4    | bible_en_utf8.txt  | Fastest | 4,966.349 μs |
+| K4os   | bible_en_utf8.txt  | Fastest | 2,807.782 μs |
+| lz4    | bible_kr_utf8.txt  | Default | 5,673.352 μs |
+| K4os   | bible_kr_utf8.txt  | Default | 3,845.430 μs |
+| lz4    | bible_kr_utf8.txt  | Fastest | 6,114.985 μs |
+| K4os   | bible_kr_utf8.txt  | Fastest | 3,753.987 μs |
+| lz4    | ooffice.dll       | Default | 7,170.132 μs |
+| K4os   | ooffice.dll       | Default | 4,635.963 μs | 
+| lz4    | ooffice.dll       | Fastest | 7,587.325 μs | 
+| K4os   | ooffice.dll       | Fastest | 4,743.326 μs | 
+| lz4    | reymont.pdf       | Default | 6,546.353 μs | 
+| K4os   | reymont.pdf       | Default | 4,529.416 μs | 
+| lz4    | reymont.pdf       | Fastest | 7,243.303 μs | 
+| K4os   | reymont.pdf       | Fastest | 4,760.949 μs | 

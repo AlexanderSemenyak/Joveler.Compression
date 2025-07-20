@@ -1,6 +1,6 @@
 ﻿/*
-    C# Wrapper written by Hajin Jang
-    Copyright (C) 2018-2020 Hajin Jang
+    Written by Hajin Jang (BSD 2-Clause)
+    Copyright (C) 2018-present Hajin Jang
 
     Redistribution and use in source and binary forms, with or without modification,
     are permitted provided that the following conditions are met:
@@ -39,9 +39,9 @@ namespace Joveler.Compression.LZ4.Tests
         public void VersionTests()
         {
             Version verInst = LZ4Init.Version();
-            Console.WriteLine(verInst);
+            Console.WriteLine($"liblz4 version (Version) = {verInst}");
             string verStr = LZ4Init.VersionString();
-            Console.WriteLine(verStr);
+            Console.WriteLine($"liblz4 version (String)  = {verStr}");
         }
     }
 }

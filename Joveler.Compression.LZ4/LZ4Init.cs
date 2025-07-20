@@ -3,7 +3,7 @@
     Copyright (c) 2011-2016, Yann Collet
 
     C# Wrapper written by Hajin Jang
-    Copyright (C) 2018-2020 Hajin Jang
+    Copyright (C) 2018-present Hajin Jang
 
     Redistribution and use in source and binary forms, with or without modification,
     are permitted provided that the following conditions are met:
@@ -28,23 +28,22 @@
 */
 
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
 namespace Joveler.Compression.LZ4
 {
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
     public static class LZ4Init
     {
         #region LoadManager
         internal static LZ4LoadManager Manager = new LZ4LoadManager();
-        internal static LZ4Loader Lib => Manager.Lib;
+        internal static LZ4Loader? Lib => Manager.Lib;
         #endregion
 
         #region GlobalInit, GlobalCleanup
         public static void GlobalInit() => Manager.GlobalInit();
         public static void GlobalInit(string libPath) => Manager.GlobalInit(libPath);
         public static void GlobalCleanup() => Manager.GlobalCleanup();
+        public static bool TryGlobalCleanup() => Manager.TryGlobalCleanup();
         #endregion
 
         #region Version - (Static)
@@ -52,19 +51,7 @@ namespace Joveler.Compression.LZ4
         {
             Manager.EnsureLoaded();
 
-            /*
-                Definition from "lz4.h"
-
-#define LZ4_VERSION_MAJOR    1 
-#define LZ4_VERSION_MINOR    8 
-#define LZ4_VERSION_RELEASE  3
-
-#define LZ4_VERSION_NUMBER (LZ4_VERSION_MAJOR *100*100 + LZ4_VERSION_MINOR *100 + LZ4_VERSION_RELEASE)
-
-#define LZ4_LIB_VERSION LZ4_VERSION_MAJOR.LZ4_VERSION_MINOR.LZ4_VERSION_RELEASE
-            */
-
-            int verInt = (int)Lib.VersionNumber();
+            int verInt = (int)Lib!.VersionNumber!();
             int major = verInt / 10000;
             int minor = verInt % 10000 / 100;
             int revision = verInt % 100;
@@ -76,8 +63,8 @@ namespace Joveler.Compression.LZ4
         {
             Manager.EnsureLoaded();
 
-            IntPtr ptr = Lib.VersionString();
-            return Marshal.PtrToStringAnsi(ptr);
+            IntPtr ptr = Lib!.VersionString!();
+            return Marshal.PtrToStringAnsi(ptr) ?? "";
         }
         #endregion
     }

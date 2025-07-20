@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Target .NET Framework 4.8.1 & .NET 6 | .NET Core 3.x or lower has stability issues on ARM/ARM64 (virtual) machines -->
+	  <!-- Windowws -->
+    <TargetFrameworks>net481;net8.0</TargetFrameworks>
+    <!-- POSIX -->
+    <TargetFrameworks Condition="'$(OS)' != 'Windows_NT'">net8.0</TargetFrameworks>
+
+    <IsPackable>false</IsPackable>
+    <Platforms>AnyCPU</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.7.3" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.7.3" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Joveler.Compression.Zstd\Joveler.Compression.Zstd.csproj" />
+  </ItemGroup>
+
+</Project>

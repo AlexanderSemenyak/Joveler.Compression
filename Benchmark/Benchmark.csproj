@@ -2,24 +2,62 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Platforms>AnyCPU</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.12.1" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.14.0" />
     <PackageReference Include="Crc32.NET" Version="1.2.0" />
-    <PackageReference Include="InvertedTomato.Crc" Version="1.1.3" />
-    <PackageReference Include="K4os.Compression.LZ4.Streams" Version="1.2.6" />
+    <PackageReference Include="K4os.Compression.LZ4.Streams" Version="1.3.8" />
     <PackageReference Include="K4os.Hash.Crc" Version="1.1.4" />
-    <PackageReference Include="K4os.Hash.xxHash" Version="1.0.6" />
-    <PackageReference Include="SharpCompress" Version="0.29.0" />
+    <PackageReference Include="K4os.Hash.xxHash" Version="1.0.8" />
+    <PackageReference Include="SharpCompress" Version="0.39.0" />
+    <PackageReference Include="System.IO.Hashing" Version="9.0.1" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.4" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Joveler.Compression.LZ4\Joveler.Compression.LZ4.csproj" />
     <ProjectReference Include="..\Joveler.Compression.XZ\Joveler.Compression.XZ.csproj" />
     <ProjectReference Include="..\Joveler.Compression.ZLib\Joveler.Compression.ZLib.csproj" />
+    <ProjectReference Include="..\Joveler.Compression.Zstd\Joveler.Compression.Zstd.csproj" />
   </ItemGroup>
 
+  <!-- Additional Native Library for zlib fork comparison -->
+  <ItemGroup>
+    <None Include="$(ProjectDir)runtimes\win-x86\native\*.dll">
+      <Link>runtimes\win-x86\native\%(FileName)%(Extension)</Link> <!-- Project Reference -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(ProjectDir)runtimes\win-x64\native\*.dll">
+      <Link>runtimes\win-x64\native\%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(ProjectDir)runtimes\win-arm64\native\*.dll">
+      <Link>runtimes\win-arm64\native\%(FileName)%(Extension)</Link> <!-- Project Reference -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(ProjectDir)runtimes\linux-x64\native\*.so">
+      <Link>runtimes\linux-x64\native\%(FileName)%(Extension)</Link> <!-- Project Reference -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(ProjectDir)runtimes\linux-arm\native\*.so">
+      <Link>runtimes\linux-arm\native\%(FileName)%(Extension)</Link> <!-- Project Reference -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(ProjectDir)runtimes\linux-arm64\native\*.so">
+      <Link>runtimes\linux-arm64\native\%(FileName)%(Extension)</Link> <!-- Project Reference -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(ProjectDir)runtimes\osx-x64\native\*.dylib">
+      <Link>runtimes\osx-x64\native\%(FileName)%(Extension)</Link> <!-- Project Reference -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(ProjectDir)runtimes\osx-arm64\native\*.dylib">
+      <Link>runtimes\osx-arm64\native\%(FileName)%(Extension)</Link> <!-- Project Reference -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

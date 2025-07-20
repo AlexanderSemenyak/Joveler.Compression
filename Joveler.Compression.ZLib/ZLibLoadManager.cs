@@ -1,5 +1,6 @@
 ﻿/*
-    Copyright (C) 2017-2020 Hajin Jang
+    Written by Hajin Jang
+    Copyright (C) 2017-present Hajin Jang
 
     zlib license
 
